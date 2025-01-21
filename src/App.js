@@ -3,7 +3,7 @@ import LectionarySearch from './LectionarySearch';
 
 function App() {
   return (
-    <div className="p-4">
+    <div className="App">
       <LectionarySearch />
     </div>
   );

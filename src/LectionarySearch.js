@@ -1,37 +1,160 @@
-import React, { useState } from 'react';
-import { Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, ChevronDown, ChevronUp } from 'lucide-react';
 
-// Sample reading class structure
-class Reading {
-  constructor(text, date, source) {
-    this.text = text;
-    this.date = date;
-    this.source = source;
-  }
-}
+// Date formatting function
+const formatDate = (dateStr) => {
+  if (!dateStr || dateStr.length !== 6) return 'Invalid Date';
+  const month = dateStr.substring(0, 2);
+  const day = dateStr.substring(2, 4);
+  const year = '20' + dateStr.substring(4, 6);  // Add '20' prefix for year
+  return `${month}/${day}/${year}`;
+};
+
+const ResultCard = ({ reading }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const previewText = reading.text.slice(0, 100) + (reading.text.length > 100 ? '...' : '');
+  
+  return (
+    <div className="mb-4 border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+      <div 
+        className="p-4 cursor-pointer"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex justify-between items-center mb-2">
+          <span className="font-semibold text-blue-600">{reading.source}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">
+              {formatDate(reading.date)}
+            </span>
+            {isExpanded ? 
+              <ChevronUp className="w-4 h-4 text-gray-500" /> : 
+              <ChevronDown className="w-4 h-4 text-gray-500" />
+            }
+          </div>
+        </div>
+        <p className="text-gray-700 whitespace-pre-line">
+          {isExpanded ? reading.text : previewText}
+        </p>
+      </div>
+    </div>
+  );
+};
 
 const LectionarySearch = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isVerseSearch, setIsVerseSearch] = useState(false);
+  const [readings, setReadings] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Sample data - replace with your actual readings
-  const readings = [
-    new Reading(
-      "The Lord said to Moses: Go up this mountain...",
-      "2025-01-20",
-      "Exodus 3:1-12"
-    ),
-    new Reading(
-      "Salvation belongs to our God who sits upon the throne.",
-      "2025-01-21",
-      "Revelation 7:10"
-    ),
-    // Add more readings here
-  ];
+  // Debounce function to limit how often we search
+  const debounce = (func, wait) => {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handleSearchInput = React.useCallback(
+    debounce((value) => {
+      if (!value.trim()) {
+        setSearchResults([]);
+        return;
+      }
+
+      if (value.includes(',')) {
+        // Split by comma and trim whitespace
+        const searchTerms = value.toLowerCase().split(',').map(term => term.trim());
+        const results = readings.filter(reading =>
+          searchTerms.every(term => 
+            reading.text.toLowerCase().includes(term) ||
+            reading.source.toLowerCase().includes(term)
+          )
+        );
+        setSearchResults(results);
+      } else {
+        // Exact phrase search
+        const results = readings.filter(reading =>
+          reading.text.toLowerCase().includes(value.toLowerCase()) ||
+          reading.source.toLowerCase().includes(value.toLowerCase())
+        );
+        setSearchResults(results);
+      }
+    }, 300),
+    [readings]
+  );
+  const [debugInfo, setDebugInfo] = useState('');
+
+  useEffect(() => {
+    const loadReadings = async () => {
+      try {
+        setDebugInfo('Attempting to load readings...');
+        const response = await fetch('/lectionary-search/readings.json');
+        setDebugInfo(prev => prev + `\nFetch response status: ${response.status}`);
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        setDebugInfo(prev => prev + '\nParsed JSON successfully');
+
+        // Filter out invalid readings
+        const validReadings = [];
+        const skippedReadings = [];
+
+        data.forEach((reading, index) => {
+          const hasValidText = reading.text && reading.text.trim() !== '';
+          const hasValidDate = reading.date && reading.date.trim() !== '';
+          const hasValidSource = reading.source && reading.source.trim() !== '';
+
+          if (hasValidText && hasValidDate && hasValidSource) {
+            validReadings.push(reading);
+          } else {
+            skippedReadings.push({
+              index,
+              source: reading.source || 'No source',
+              date: reading.date || 'No date',
+              reason: [
+                !hasValidText && 'Missing text',
+                !hasValidDate && 'Missing date',
+                !hasValidSource && 'Missing source'
+              ].filter(Boolean).join(', ')
+            });
+          }
+        });
+
+        setDebugInfo(prev => prev + `\nTotal readings found: ${data.length}`);
+        setDebugInfo(prev => prev + `\nValid readings: ${validReadings.length}`);
+        
+        if (skippedReadings.length > 0) {
+          setDebugInfo(prev => prev + '\n\nSkipped readings:');
+          skippedReadings.forEach(({ index, source, date, reason }) => {
+            setDebugInfo(prev => prev + `\n[${index}] ${source} (${date}): ${reason}`);
+          });
+        }
+
+        setReadings(validReadings);
+        setIsLoading(false);
+
+      } catch (err) {
+        console.error('Error loading readings:', err);
+        setError(`Error loading readings: ${err.message}`);
+        setIsLoading(false);
+      }
+    };
+
+    loadReadings();
+  }, []);
 
   const parseVerseReference = (reference) => {
-    // Match format like "Genesis 1:1" or "Gen 1:1"
     const match = reference.match(/^(\w+)\s+(\d+):(\d+)$/);
     if (!match) return null;
     return {
@@ -51,7 +174,6 @@ const LectionarySearch = () => {
     setIsVerseSearch(!!verseReference);
 
     if (verseReference) {
-      // Search by verse reference
       const results = readings.filter(reading => {
         const readingRef = parseVerseReference(reading.source);
         return readingRef && 
@@ -61,65 +183,100 @@ const LectionarySearch = () => {
       });
       setSearchResults(results);
     } else {
-      // Search by keyword
-      const searchTerms = searchQuery.toLowerCase().split(' ');
-      const results = readings.filter(reading =>
-        searchTerms.every(term => 
-          reading.text.toLowerCase().includes(term) ||
-          reading.source.toLowerCase().includes(term)
-        )
-      );
-      setSearchResults(results);
+      // Check if it's a comma-delimited search
+      if (searchQuery.includes(',')) {
+        // Split by comma and trim whitespace
+        const searchTerms = searchQuery.toLowerCase().split(',').map(term => term.trim());
+        const results = readings.filter(reading =>
+          searchTerms.every(term => 
+            reading.text.toLowerCase().includes(term) ||
+            reading.source.toLowerCase().includes(term)
+          )
+        );
+        setSearchResults(results);
+      } else {
+        // Exact phrase search
+        const results = readings.filter(reading =>
+          reading.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          reading.source.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        setSearchResults(results);
+      }
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-4 bg-white rounded-lg shadow">
-      <h1 className="text-2xl font-bold mb-4">Catholic Lectionary Search</h1>
-      
-      <div className="mb-6">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Enter search term or verse (e.g., 'mountain' or 'Genesis 1:1')"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-            className="flex-1 p-2 border rounded"
-          />
-          <button 
-            onClick={handleSearch}
-            className="px-4 py-2 bg-blue-500 text-white rounded flex items-center gap-2"
-          >
-            <Search className="w-4 h-4" />
-            Search
-          </button>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-4xl mx-auto pt-16 px-4">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+            Catholic Lectionary Search
+          </h1>
+          {error && (
+            <div className="mb-4 p-4 bg-red-100 text-red-700 rounded text-sm">
+              Failed to load readings. Please try again later.
+            </div>
+          )}
+          <p className="text-gray-600 mb-8">
+            Search by exact phrase, verse reference (e.g., "Genesis 1:1"), or multiple terms separated by commas (e.g., "Peter, Andrew")
+          </p>
+          
+          <div className="max-w-2xl mx-auto">
+            <div className="flex gap-2 shadow-lg rounded-lg overflow-hidden bg-white">
+              <input
+                type="text"
+                placeholder="Type an exact phrase or multiple terms separated by commas..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  handleSearchInput(e.target.value);
+                }}
+                className="flex-1 p-4 border-0 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                disabled={isLoading}
+              />
+              <button 
+                onClick={() => handleSearchInput(searchQuery)}
+                className={`px-6 py-4 bg-blue-500 text-white flex items-center gap-2 ${
+                  isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-600'
+                } transition-colors`}
+                disabled={isLoading}
+              >
+                <Search className="w-5 h-5" />
+                {isLoading ? 'Loading...' : 'Search'}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div>
-        {searchResults.length > 0 ? (
-          <>
-            <h3 className="text-lg font-semibold mb-4">
-              {searchResults.length} {searchResults.length === 1 ? 'Result' : 'Results'} found
-              {isVerseSearch ? ' for verse reference:' : ' for search term:'}
-              <span className="ml-2 font-normal">{searchQuery}</span>
-            </h3>
-            {searchResults.map((result, index) => (
-              <div key={index} className="mb-4 p-4 border rounded">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-semibold">{result.source}</span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(result.date).toLocaleDateString()}
-                  </span>
-                </div>
-                <p className="text-gray-700">{result.text}</p>
+        <div className="mt-8">
+          {isLoading ? (
+            <div className="text-center py-8 text-gray-500">
+              Loading readings...
+            </div>
+          ) : (
+            <>
+              {searchResults.length > 0 && (
+                <h3 className="text-lg font-semibold mb-6 text-gray-700">
+                  {searchResults.length} {searchResults.length === 1 ? 'Result' : 'Results'} found
+                  {isVerseSearch ? ' for verse reference:' : ' for search term:'} 
+                  <span className="ml-2 font-normal">"{searchQuery}"</span>
+                </h3>
+              )}
+              
+              <div className="space-y-4">
+                {searchResults.map((result, index) => (
+                  <ResultCard key={index} reading={result} />
+                ))}
               </div>
-            ))}
-          </>
-        ) : searchQuery ? (
-          <p className="text-gray-500">No results found for: {searchQuery}</p>
-        ) : null}
+              
+              {searchQuery && searchResults.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  No results found for: "{searchQuery}"
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
