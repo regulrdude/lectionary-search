@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/lectionary-search/static/css/main.397b2038.css",
+    "main.js": "/lectionary-search/static/js/main.ca5c288f.js",
+    "static/js/488.8d1ebb93.chunk.js": "/lectionary-search/static/js/488.8d1ebb93.chunk.js",
+    "index.html": "/lectionary-search/index.html",
+    "main.397b2038.css.map": "/lectionary-search/static/css/main.397b2038.css.map",
+    "main.ca5c288f.js.map": "/lectionary-search/static/js/main.ca5c288f.js.map",
+    "488.8d1ebb93.chunk.js.map": "/lectionary-search/static/js/488.8d1ebb93.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.397b2038.css",
+    "static/js/main.ca5c288f.js"
+  ]
+}
